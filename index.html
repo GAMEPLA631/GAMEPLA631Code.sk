@@ -177,22 +177,23 @@
         const danceOnlyAnims = [507771019, 507771951, 507772104, 507776839, 507777623];
 
         function getGroomaLua() {
-            return `-- © GAMEPLA631 STUDIOS | GROOMA AI UNIVERSAL CORE
--- DEVELOPMENT: 2 YEARS | STATUS: COMPLETED
+            return `-- © GAMEPLA631 STUDIOS | GROOMA AI UNIVERSAL CORE (FIXED)
+-- DEVELOPMENT: 2 YEARS | STATUS: STABLE
 -- ADAPTABILITY: FULL (WORKS ON ANY MODEL/MAP/GAME)
--- LIMITS: 1H PLAYTIME / 1H COOLDOWN (PERSISTENT DATASTORE)
+-- LIMITS: 1H PLAYTIME / 1H COOLDOWN (DATASTORE INTEGRATED)
 
 local DataStoreService = game:GetService("DataStoreService")
 local PathfindingService = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
-local CollectionService = game:GetService("CollectionService")
 
 local NPC = script.Parent
 local Humanoid = NPC:WaitForChild("Humanoid")
 local RootPart = NPC:WaitForChild("HumanoidRootPart")
 local Animator = Humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", Humanoid)
 
-local AI_DS = DataStoreService:GetDataStore("GroomaAI_UniversalSync_V2")
+local AI_DS = nil
+pcall(function() AI_DS = DataStoreService:GetDataStore("GroomaAI_UniversalSync_V3") end)
+
 local LIMIT_SECONDS = 3600 -- 1 Hodina hrania
 local REST_SECONDS = 3600  -- 1 Hodina odpočinok
 
@@ -211,6 +212,8 @@ end
 
 -- Persistentný stav systému (DataStore)
 local function getAISystemState()
+    if not AI_DS then return true, "LOCAL_MODE" end
+    
     local key = "GroomaData_" .. NPC.Name
     local success, data = pcall(function() return AI_DS:GetAsync(key) end)
     local now = os.time()
@@ -220,26 +223,23 @@ local function getAISystemState()
             if now - data.LastActive < REST_SECONDS then 
                 return false, "RESTING" 
             end
-            -- Reset po odpočinku
             local newData = {SessionStart = now, LastActive = now}
             pcall(function() AI_DS:SetAsync(key, newData) end)
             return true, "READY"
         end
         return true, "ACTIVE"
+    else
+        local initData = {SessionStart = now, LastActive = now}
+        pcall(function() AI_DS:SetAsync(key, initData) end)
+        return true, "INITIALIZED"
     end
-    
-    -- Inicializácia
-    local initData = {SessionStart = now, LastActive = now}
-    pcall(function() AI_DS:SetAsync(key, initData) end)
-    return true, "INITIALIZED"
 end
 
--- Univerzálny skener mapy a interakcií
+-- Univerzálny skener mapy
 local function scanEnvironment()
     local bestTarget = nil
     local minDist = 30
     
-    -- Hľadá interaktívne objekty v celom workspace (ClickDetectors, Prompts, Seats)
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("ClickDetector") or obj:IsA("ProximityPrompt") or obj:IsA("Seat") then
             local targetPart = (obj:IsA("ClickDetector") or obj:IsA("ProximityPrompt")) and obj.Parent or obj
@@ -255,7 +255,7 @@ local function scanEnvironment()
     return bestTarget
 end
 
--- Pokročilý Pathfinding adaptovaný na každú mapu
+-- Pokročilý Pathfinding (Opravené zasekávanie)
 local function moveAI(pos)
     local path = PathfindingService:CreatePath({
         AgentRadius = 3, 
@@ -273,15 +273,18 @@ local function moveAI(pos)
                 Humanoid.Jump = true
             end
             Humanoid:MoveTo(wp.Position)
-            tracks.Walk:Play(0.3)
+            if not tracks.Walk.IsPlaying then tracks.Walk:Play(0.3) end
             
-            local arrived = Humanoid.MoveToFinished:Wait(1)
-            if not arrived then break end -- Prevencia zaseknutia
+            local arrived = Humanoid.MoveToFinished:Wait(2) -- Timeout pre plynulosť
+            if not arrived then break end
         end
     else
-        -- Priama chôdza ak pathfinding zlyhá
+        -- FIX: Ak pathfinding zlyhá, urobíme priamy pohyb a počkáme
         Humanoid:MoveTo(pos)
+        if not tracks.Walk.IsPlaying then tracks.Walk:Play(0.3) end
+        Humanoid.MoveToFinished:Wait(2)
     end
+    tracks.Walk:Stop(0.3)
 end
 
 -- Hlavný mozog GroomaAI
@@ -296,26 +299,24 @@ task.spawn(function()
                 tracks.Interact:Play()
                 task.wait(2)
             else
-                -- Náhodné skúmanie mapy (Wander)
                 local randomPos = RootPart.Position + Vector3.new(math.random(-50,50), 0, math.random(-50,50))
                 moveAI(randomPos)
             end
             
-            -- Priebežná aktualizácia času
-            pcall(function() 
-                local d = AI_DS:GetAsync("GroomaData_" .. NPC.Name)
-                if d then
-                    d.LastActive = os.time()
-                    AI_DS:SetAsync("GroomaData_" .. NPC.Name, d)
-                end
-            end)
+            if AI_DS then
+                pcall(function() 
+                    local d = AI_DS:GetAsync("GroomaData_" .. NPC.Name)
+                    if d then
+                        d.LastActive = os.time()
+                        AI_DS:SetAsync("GroomaData_" .. NPC.Name, d)
+                    end
+                end)
+            end
         else
-            -- Systémový odpočinok
             tracks.Idle:Play(0.5)
-            Humanoid:Move(Vector3.new(0,0,0))
-            task.wait(15) -- Šetrí výkon servera počas spánku
+            task.wait(10)
         end
-        task.wait(1)
+        task.wait(0.5)
     end
 end)`;
         }
@@ -457,7 +458,7 @@ end`;
                     // Wanderers (4)
                     for(let i=0; i<4; i++) store.add({ id: 200+i, category: 'wanderer', title: `GAMEPLA Wanderer #${i+1}`, code: getBaseLua('wanderer', fullAnimSets[i%3], 200+i) });
                     // Killers (20)
-                    for(let i=0; i<20; i++) store.add({ id: i, category: 'killer', title: `Shadow Stalker #${i+1}`, code: getBaseLua('killer', fullAnimSets[i%3], i) });
+                    for(let i=20; i<110; i++) store.add({ id: i, category: 'killer', title: `Shadow Stalker #${i+1}`, code: getBaseLua('killer', fullAnimSets[i%3], i) });
                     // Zombies (90)
                     for(let i=20; i<110; i++) store.add({ id: i, category: 'zombie', title: `Infected AI #${i-19}`, code: getBaseLua('zombie', fullAnimSets[0], i) });
                     // Static (6)
