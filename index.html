@@ -177,10 +177,10 @@
         const danceOnlyAnims = [507771019, 507771951, 507772104, 507776839, 507777623];
 
         function getGroomaLua() {
-            return `-- © GAMEPLA631 STUDIOS | GROOMA AI UNIVERSAL UNBOUND
+            return `-- © GAMEPLA631 STUDIOS | GROOMA AI UNIVERSAL UNBOUND (SWORD EDITION)
 -- DEVELOPMENT: 2 YEARS | STATUS: COMPLETED
 -- ADAPTABILITY: FULL (WORKS ON ANY MODEL/MAP/GAME)
--- LIMITS: NONE (ALWAYS ACTIVE)
+-- COMBAT: SWORD KILLER ENABLED
 
 local PathfindingService = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
@@ -194,7 +194,8 @@ local Animator = Humanoid:FindFirstChildOfClass("Animator") or Instance.new("Ani
 local animIds = {
     Idle = "rbxassetid://891621366",
     Walk = "rbxassetid://891636393",
-    Interact = "rbxassetid://891627522"
+    Interact = "rbxassetid://891627522",
+    Attack = "rbxassetid://108954289853086" -- Tvoja špeciálna animácia útoku
 }
 
 local tracks = {}
@@ -203,7 +204,22 @@ for k, v in pairs(animIds) do
     tracks[k] = Animator:LoadAnimation(a)
 end
 
--- Univerzálny skener mapy
+-- Vyhľadávanie najbližšieho nepriateľa (hráča)
+local function getAttackTarget()
+    local target, dist = nil, 50 -- Dosah detekcie hráčov
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character.Humanoid.Health > 0 then
+            local d = (RootPart.Position - p.Character.HumanoidRootPart.Position).Magnitude
+            if d < dist then
+                dist = d
+                target = p.Character
+            end
+        end
+    end
+    return target
+end
+
+-- Univerzálny skener mapy pre interakcie
 local function scanEnvironment()
     local bestTarget = nil
     local minDist = 30
@@ -223,7 +239,7 @@ local function scanEnvironment()
     return bestTarget
 end
 
--- Pokročilý Pathfinding (Opravené zasekávanie)
+-- Pokročilý Pathfinding
 local function moveAI(pos)
     local path = PathfindingService:CreatePath({
         AgentRadius = 3, 
@@ -243,12 +259,10 @@ local function moveAI(pos)
             Humanoid:MoveTo(wp.Position)
             if not tracks.Walk.IsPlaying then tracks.Walk:Play(0.3) end
             
-            -- Dynamický timeout pre pohyb k waypointu
             local arrived = Humanoid.MoveToFinished:Wait(2.5) 
-            if not arrived then break end -- Prevencia zaseknutia na prekážke
+            if not arrived then break end
         end
     else
-        -- Fallback: Ak pathfinding zlyhá, urobíme priamy pohyb
         Humanoid:MoveTo(pos)
         if not tracks.Walk.IsPlaying then tracks.Walk:Play(0.3) end
         Humanoid.MoveToFinished:Wait(2)
@@ -256,22 +270,33 @@ local function moveAI(pos)
     tracks.Walk:Stop(0.3)
 end
 
--- Hlavná slučka GroomaAI (Always Online)
+-- Hlavná slučka GroomaAI (Killer Mode)
 task.spawn(function()
     while true do
-        local target = scanEnvironment()
+        local enemy = getAttackTarget()
         
-        if target then
-            moveAI(target.Position)
-            tracks.Interact:Play()
-            task.wait(2)
+        if enemy then
+            -- Režim lovu
+            moveAI(enemy.HumanoidRootPart.Position)
+            if (RootPart.Position - enemy.HumanoidRootPart.Position).Magnitude < 7 then
+                tracks.Attack:Play()
+                enemy.Humanoid:TakeDamage(100) -- Okamžitá eliminácia
+                task.wait(1.2)
+            end
         else
-            -- Náhodné skúmanie mapy (Wander)
-            local randomPos = RootPart.Position + Vector3.new(math.random(-50,50), 0, math.random(-50,50))
-            moveAI(randomPos)
+            -- Režim prieskumu
+            local target = scanEnvironment()
+            if target then
+                moveAI(target.Position)
+                tracks.Interact:Play()
+                task.wait(2)
+            else
+                local randomPos = RootPart.Position + Vector3.new(math.random(-50,50), 0, math.random(-50,50))
+                moveAI(randomPos)
+            end
         end
         
-        task.wait(0.5) -- Odozva systému
+        task.wait(0.5)
     end
 end)`;
         }
