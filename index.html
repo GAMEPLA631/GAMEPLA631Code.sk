@@ -18,6 +18,7 @@
             --accent-purple: #a855f7;
             --accent-emerald: #10b981;
             --accent-orange: #f97316;
+            --accent-grooma: #fb7185;
             --gp-gold: #fbbf24;
         }
 
@@ -133,6 +134,7 @@
             <!-- Filters -->
             <div class="flex flex-wrap justify-center gap-3 mb-16">
                 <button onclick="filterScripts('all')" class="category-btn active px-7 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest">All Assets</button>
+                <button onclick="filterScripts('grooma')" class="category-btn px-7 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest text-rose-400 border-rose-500/20">GroomaAI</button>
                 <button onclick="filterScripts('wanderer')" class="category-btn px-7 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest">Wanderers</button>
                 <button onclick="filterScripts('zombie')" class="category-btn px-7 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest">Zombie AI</button>
                 <button onclick="filterScripts('killer')" class="category-btn px-7 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest">Killers</button>
@@ -169,10 +171,107 @@
         const fullAnimSets = [
             { run: 891636393, walk: 891636393, jump: 891627522, idle: "891621366, 891633237, 1047759695", fall: 891617961, swim: 891639666, swimIdle: 891663592, climb: 891609353 },
             { run: 910025107, walk: 910034870, jump: 910016857, idle: "910004836, 910009958, 1018536639", fall: 910001910, swim: 910028158, swimIdle: 910030921, climb: 909997997 },
-            { run: 742638842, walk: 742640026, jump: 742637942, idle: "742637544, 742638445, 885477856", fall: 742637151, swim: 742639220, swimIdle: 742639812, climb: 742636889 }
+            { run: 742638842, walk: 742640026, jump: 742637942, idle: "742637544, 742638445, 885477856", fall: 891617961, swim: 742639220, swimIdle: 742639812, climb: 742636889 }
         ];
 
         const danceOnlyAnims = [507771019, 507771951, 507772104, 507776839, 507777623];
+
+        function getGroomaLua() {
+            return `-- © GAMEPLA631 STUDIOS | GROOMA AI CORE
+-- DEVELOPMENT: 2 YEARS | STATUS: COMPLETED
+-- LIMITS: 1H PLAYTIME / 1H COOLDOWN (PERSISTENT)
+
+local DataStoreService = game:GetService("DataStoreService")
+local PathfindingService = game:GetService("PathfindingService")
+local Players = game:GetService("Players")
+
+local NPC = script.Parent
+local Humanoid = NPC:WaitForChild("Humanoid")
+local RootPart = NPC:WaitForChild("HumanoidRootPart")
+local Animator = Humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", Humanoid)
+
+local AI_DS = DataStoreService:GetDataStore("GroomaAI_TimeSync_V1")
+local LIMIT_SECONDS = 3600 -- 1 Hodina hrania
+local REST_SECONDS = 3600  -- 1 Hodina odpočinok
+
+-- Animácie
+local animIds = {
+    Idle = "rbxassetid://891621366",
+    Walk = "rbxassetid://891636393",
+    Interact = "rbxassetid://891627522"
+}
+
+local tracks = {}
+for k, v in pairs(animIds) do
+    local a = Instance.new("Animation") a.AnimationId = v
+    tracks[k] = Animator:LoadAnimation(a)
+end
+
+-- Cloud Time Management
+local function getAISystemState()
+    local success, data = pcall(function() return AI_DS:GetAsync("GroomaData_" .. NPC.Name) end)
+    local now = os.time()
+    if success and data then
+        if now - data.SessionStart >= LIMIT_SECONDS then
+            if now - data.LastActive < REST_SECONDS then return false, "RESTING" end
+            AI_DS:SetAsync("GroomaData_" .. NPC.Name, {SessionStart = now, LastActive = now})
+            return true, "READY"
+        end
+        return true, "ACTIVE"
+    end
+    AI_DS:SetAsync("GroomaData_" .. NPC.Name, {SessionStart = now, LastActive = now})
+    return true, "INITIAL"
+end
+
+local function scanMap()
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("ClickDetector") or obj.Name == "Interactive" then
+            local dist = (RootPart.Position - obj.Parent.Position).Magnitude
+            if dist < 20 then return obj.Parent end
+        end
+    end
+    return nil
+end
+
+local function moveAI(pos)
+    local path = PathfindingService:CreatePath({AgentRadius = 3, AgentCanJump = true})
+    path:ComputeAsync(RootPart.Position, pos)
+    if path.Status == Enum.PathStatus.Success then
+        for _, wp in ipairs(path:GetWaypoints()) do
+            Humanoid:MoveTo(wp.Position)
+            tracks.Walk:Play(0.3)
+            Humanoid.MoveToFinished:Wait()
+        end
+    end
+end
+
+-- Hlavná slučka
+task.spawn(function()
+    while true do
+        local allowed, state = getAISystemState()
+        if allowed then
+            local target = scanMap()
+            if target then
+                moveAI(target.Position)
+                tracks.Interact:Play()
+                task.wait(2)
+            else
+                moveAI(RootPart.Position + Vector3.new(math.random(-40,40), 0, math.random(-40,40)))
+            end
+            pcall(function() 
+                local d = AI_DS:GetAsync("GroomaData_" .. NPC.Name)
+                d.LastActive = os.time()
+                AI_DS:SetAsync("GroomaData_" .. NPC.Name, d)
+            end)
+        else
+            tracks.Idle:Play(0.5)
+            Humanoid:Move(Vector3.new(0,0,0))
+            task.wait(10)
+        end
+        task.wait(1)
+    end
+end)`;
+        }
 
         function getBaseLua(mode, anims, id) {
             const isStatic = mode === 'static';
@@ -306,11 +405,19 @@ end`;
 
             countReq.onsuccess = () => {
                 if (countReq.result === 0) {
+                    // GroomaAI (1)
+                    store.add({ id: 500, category: 'grooma', title: 'GroomaAI - Neural Intelligence', code: getGroomaLua() });
+                    // Wanderers (4)
                     for(let i=0; i<4; i++) store.add({ id: 200+i, category: 'wanderer', title: `GAMEPLA Wanderer #${i+1}`, code: getBaseLua('wanderer', fullAnimSets[i%3], 200+i) });
+                    // Killers (20)
                     for(let i=0; i<20; i++) store.add({ id: i, category: 'killer', title: `Shadow Stalker #${i+1}`, code: getBaseLua('killer', fullAnimSets[i%3], i) });
+                    // Zombies (90)
                     for(let i=20; i<110; i++) store.add({ id: i, category: 'zombie', title: `Infected AI #${i-19}`, code: getBaseLua('zombie', fullAnimSets[0], i) });
+                    // Static (6)
                     for(let i=110; i<116; i++) store.add({ id: i, category: 'static', title: `Static Entity #${i-109}`, code: getBaseLua('static', fullAnimSets[0], i) });
+                    // Dancer
                     store.add({ id: 117, category: 'dancer', title: `Premier Dancer NPC`, code: getBaseLua('dancer', fullAnimSets[1], 117) });
+                    
                     tx.oncomplete = () => renderScripts();
                 } else {
                     renderScripts();
@@ -338,6 +445,7 @@ end`;
                         if(item.category === 'dancer') icon = '🕺';
                         if(item.category === 'static') icon = '👻';
                         if(item.category === 'wanderer') icon = '🚶';
+                        if(item.category === 'grooma') icon = '🧠';
 
                         card.innerHTML = `
                             <div class="flex justify-between items-start mb-8">
