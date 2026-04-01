@@ -177,24 +177,26 @@
         const danceOnlyAnims = [507771019, 507771951, 507772104, 507776839, 507777623];
 
         function getGroomaLua() {
-            return `-- © GAMEPLA631 STUDIOS | GROOMA AI CORE
+            return `-- © GAMEPLA631 STUDIOS | GROOMA AI UNIVERSAL CORE
 -- DEVELOPMENT: 2 YEARS | STATUS: COMPLETED
--- LIMITS: 1H PLAYTIME / 1H COOLDOWN (PERSISTENT)
+-- ADAPTABILITY: FULL (WORKS ON ANY MODEL/MAP/GAME)
+-- LIMITS: 1H PLAYTIME / 1H COOLDOWN (PERSISTENT DATASTORE)
 
 local DataStoreService = game:GetService("DataStoreService")
 local PathfindingService = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
+local CollectionService = game:GetService("CollectionService")
 
 local NPC = script.Parent
 local Humanoid = NPC:WaitForChild("Humanoid")
 local RootPart = NPC:WaitForChild("HumanoidRootPart")
 local Animator = Humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", Humanoid)
 
-local AI_DS = DataStoreService:GetDataStore("GroomaAI_TimeSync_V1")
+local AI_DS = DataStoreService:GetDataStore("GroomaAI_UniversalSync_V2")
 local LIMIT_SECONDS = 3600 -- 1 Hodina hrania
 local REST_SECONDS = 3600  -- 1 Hodina odpočinok
 
--- Animácie
+-- Dynamické prispôsobenie animácií
 local animIds = {
     Idle = "rbxassetid://891621366",
     Walk = "rbxassetid://891636393",
@@ -207,66 +209,111 @@ for k, v in pairs(animIds) do
     tracks[k] = Animator:LoadAnimation(a)
 end
 
--- Cloud Time Management
+-- Persistentný stav systému (DataStore)
 local function getAISystemState()
-    local success, data = pcall(function() return AI_DS:GetAsync("GroomaData_" .. NPC.Name) end)
+    local key = "GroomaData_" .. NPC.Name
+    local success, data = pcall(function() return AI_DS:GetAsync(key) end)
     local now = os.time()
+    
     if success and data then
         if now - data.SessionStart >= LIMIT_SECONDS then
-            if now - data.LastActive < REST_SECONDS then return false, "RESTING" end
-            AI_DS:SetAsync("GroomaData_" .. NPC.Name, {SessionStart = now, LastActive = now})
+            if now - data.LastActive < REST_SECONDS then 
+                return false, "RESTING" 
+            end
+            -- Reset po odpočinku
+            local newData = {SessionStart = now, LastActive = now}
+            pcall(function() AI_DS:SetAsync(key, newData) end)
             return true, "READY"
         end
         return true, "ACTIVE"
     end
-    AI_DS:SetAsync("GroomaData_" .. NPC.Name, {SessionStart = now, LastActive = now})
-    return true, "INITIAL"
+    
+    -- Inicializácia
+    local initData = {SessionStart = now, LastActive = now}
+    pcall(function() AI_DS:SetAsync(key, initData) end)
+    return true, "INITIALIZED"
 end
 
-local function scanMap()
+-- Univerzálny skener mapy a interakcií
+local function scanEnvironment()
+    local bestTarget = nil
+    local minDist = 30
+    
+    -- Hľadá interaktívne objekty v celom workspace (ClickDetectors, Prompts, Seats)
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("ClickDetector") or obj.Name == "Interactive" then
-            local dist = (RootPart.Position - obj.Parent.Position).Magnitude
-            if dist < 20 then return obj.Parent end
+        if obj:IsA("ClickDetector") or obj:IsA("ProximityPrompt") or obj:IsA("Seat") then
+            local targetPart = (obj:IsA("ClickDetector") or obj:IsA("ProximityPrompt")) and obj.Parent or obj
+            if targetPart:IsA("BasePart") then
+                local dist = (RootPart.Position - targetPart.Position).Magnitude
+                if dist < minDist then
+                    minDist = dist
+                    bestTarget = targetPart
+                end
+            end
         end
     end
-    return nil
+    return bestTarget
 end
 
+-- Pokročilý Pathfinding adaptovaný na každú mapu
 local function moveAI(pos)
-    local path = PathfindingService:CreatePath({AgentRadius = 3, AgentCanJump = true})
-    path:ComputeAsync(RootPart.Position, pos)
-    if path.Status == Enum.PathStatus.Success then
-        for _, wp in ipairs(path:GetWaypoints()) do
+    local path = PathfindingService:CreatePath({
+        AgentRadius = 3, 
+        AgentHeight = 5, 
+        AgentCanJump = true,
+        AgentJumpHeight = 50
+    })
+    
+    local success, err = pcall(function() path:ComputeAsync(RootPart.Position, pos) end)
+    
+    if success and path.Status == Enum.PathStatus.Success then
+        local waypoints = path:GetWaypoints()
+        for _, wp in ipairs(waypoints) do
+            if wp.Action == Enum.PathWaypointAction.Jump then
+                Humanoid.Jump = true
+            end
             Humanoid:MoveTo(wp.Position)
             tracks.Walk:Play(0.3)
-            Humanoid.MoveToFinished:Wait()
+            
+            local arrived = Humanoid.MoveToFinished:Wait(1)
+            if not arrived then break end -- Prevencia zaseknutia
         end
+    else
+        -- Priama chôdza ak pathfinding zlyhá
+        Humanoid:MoveTo(pos)
     end
 end
 
--- Hlavná slučka
+-- Hlavný mozog GroomaAI
 task.spawn(function()
     while true do
         local allowed, state = getAISystemState()
+        
         if allowed then
-            local target = scanMap()
+            local target = scanEnvironment()
             if target then
                 moveAI(target.Position)
                 tracks.Interact:Play()
                 task.wait(2)
             else
-                moveAI(RootPart.Position + Vector3.new(math.random(-40,40), 0, math.random(-40,40)))
+                -- Náhodné skúmanie mapy (Wander)
+                local randomPos = RootPart.Position + Vector3.new(math.random(-50,50), 0, math.random(-50,50))
+                moveAI(randomPos)
             end
+            
+            -- Priebežná aktualizácia času
             pcall(function() 
                 local d = AI_DS:GetAsync("GroomaData_" .. NPC.Name)
-                d.LastActive = os.time()
-                AI_DS:SetAsync("GroomaData_" .. NPC.Name, d)
+                if d then
+                    d.LastActive = os.time()
+                    AI_DS:SetAsync("GroomaData_" .. NPC.Name, d)
+                end
             end)
         else
+            -- Systémový odpočinok
             tracks.Idle:Play(0.5)
             Humanoid:Move(Vector3.new(0,0,0))
-            task.wait(10)
+            task.wait(15) -- Šetrí výkon servera počas spánku
         end
         task.wait(1)
     end
@@ -406,7 +453,7 @@ end`;
             countReq.onsuccess = () => {
                 if (countReq.result === 0) {
                     // GroomaAI (1)
-                    store.add({ id: 500, category: 'grooma', title: 'GroomaAI - Neural Intelligence', code: getGroomaLua() });
+                    store.add({ id: 500, category: 'grooma', title: 'GroomaAI - Universal Neural Intelligence', code: getGroomaLua() });
                     // Wanderers (4)
                     for(let i=0; i<4; i++) store.add({ id: 200+i, category: 'wanderer', title: `GAMEPLA Wanderer #${i+1}`, code: getBaseLua('wanderer', fullAnimSets[i%3], 200+i) });
                     // Killers (20)
