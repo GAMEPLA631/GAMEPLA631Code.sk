@@ -125,7 +125,7 @@
                         <p class="text-xs text-slate-400 leading-relaxed">
                             Všetky nižšie uvedené skripty sú duševným vlastníctvom spoločnosti <b>GAMEPLA631</b>. 
                             Vývoj a testovanie týchto AI systémov trvalo <b>2 roky intenzívnej práce</b>. 
-                            Prosíme o rešpektovanie licencií pri ich používaní v hrách.
+                            GroomaAI je teraz v režime <b>UNBOUND</b> (bez časových limitov).
                         </p>
                     </div>
                 </div>
@@ -177,12 +177,11 @@
         const danceOnlyAnims = [507771019, 507771951, 507772104, 507776839, 507777623];
 
         function getGroomaLua() {
-            return `-- © GAMEPLA631 STUDIOS | GROOMA AI UNIVERSAL CORE (FIXED)
--- DEVELOPMENT: 2 YEARS | STATUS: STABLE
+            return `-- © GAMEPLA631 STUDIOS | GROOMA AI UNIVERSAL UNBOUND
+-- DEVELOPMENT: 2 YEARS | STATUS: COMPLETED
 -- ADAPTABILITY: FULL (WORKS ON ANY MODEL/MAP/GAME)
--- LIMITS: 1H PLAYTIME / 1H COOLDOWN (DATASTORE INTEGRATED)
+-- LIMITS: NONE (ALWAYS ACTIVE)
 
-local DataStoreService = game:GetService("DataStoreService")
 local PathfindingService = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
 
@@ -190,12 +189,6 @@ local NPC = script.Parent
 local Humanoid = NPC:WaitForChild("Humanoid")
 local RootPart = NPC:WaitForChild("HumanoidRootPart")
 local Animator = Humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", Humanoid)
-
-local AI_DS = nil
-pcall(function() AI_DS = DataStoreService:GetDataStore("GroomaAI_UniversalSync_V3") end)
-
-local LIMIT_SECONDS = 3600 -- 1 Hodina hrania
-local REST_SECONDS = 3600  -- 1 Hodina odpočinok
 
 -- Dynamické prispôsobenie animácií
 local animIds = {
@@ -208,31 +201,6 @@ local tracks = {}
 for k, v in pairs(animIds) do
     local a = Instance.new("Animation") a.AnimationId = v
     tracks[k] = Animator:LoadAnimation(a)
-end
-
--- Persistentný stav systému (DataStore)
-local function getAISystemState()
-    if not AI_DS then return true, "LOCAL_MODE" end
-    
-    local key = "GroomaData_" .. NPC.Name
-    local success, data = pcall(function() return AI_DS:GetAsync(key) end)
-    local now = os.time()
-    
-    if success and data then
-        if now - data.SessionStart >= LIMIT_SECONDS then
-            if now - data.LastActive < REST_SECONDS then 
-                return false, "RESTING" 
-            end
-            local newData = {SessionStart = now, LastActive = now}
-            pcall(function() AI_DS:SetAsync(key, newData) end)
-            return true, "READY"
-        end
-        return true, "ACTIVE"
-    else
-        local initData = {SessionStart = now, LastActive = now}
-        pcall(function() AI_DS:SetAsync(key, initData) end)
-        return true, "INITIALIZED"
-    end
 end
 
 -- Univerzálny skener mapy
@@ -275,11 +243,12 @@ local function moveAI(pos)
             Humanoid:MoveTo(wp.Position)
             if not tracks.Walk.IsPlaying then tracks.Walk:Play(0.3) end
             
-            local arrived = Humanoid.MoveToFinished:Wait(2) -- Timeout pre plynulosť
-            if not arrived then break end
+            -- Dynamický timeout pre pohyb k waypointu
+            local arrived = Humanoid.MoveToFinished:Wait(2.5) 
+            if not arrived then break end -- Prevencia zaseknutia na prekážke
         end
     else
-        -- FIX: Ak pathfinding zlyhá, urobíme priamy pohyb a počkáme
+        -- Fallback: Ak pathfinding zlyhá, urobíme priamy pohyb
         Humanoid:MoveTo(pos)
         if not tracks.Walk.IsPlaying then tracks.Walk:Play(0.3) end
         Humanoid.MoveToFinished:Wait(2)
@@ -287,36 +256,22 @@ local function moveAI(pos)
     tracks.Walk:Stop(0.3)
 end
 
--- Hlavný mozog GroomaAI
+-- Hlavná slučka GroomaAI (Always Online)
 task.spawn(function()
     while true do
-        local allowed, state = getAISystemState()
+        local target = scanEnvironment()
         
-        if allowed then
-            local target = scanEnvironment()
-            if target then
-                moveAI(target.Position)
-                tracks.Interact:Play()
-                task.wait(2)
-            else
-                local randomPos = RootPart.Position + Vector3.new(math.random(-50,50), 0, math.random(-50,50))
-                moveAI(randomPos)
-            end
-            
-            if AI_DS then
-                pcall(function() 
-                    local d = AI_DS:GetAsync("GroomaData_" .. NPC.Name)
-                    if d then
-                        d.LastActive = os.time()
-                        AI_DS:SetAsync("GroomaData_" .. NPC.Name, d)
-                    end
-                end)
-            end
+        if target then
+            moveAI(target.Position)
+            tracks.Interact:Play()
+            task.wait(2)
         else
-            tracks.Idle:Play(0.5)
-            task.wait(10)
+            -- Náhodné skúmanie mapy (Wander)
+            local randomPos = RootPart.Position + Vector3.new(math.random(-50,50), 0, math.random(-50,50))
+            moveAI(randomPos)
         end
-        task.wait(0.5)
+        
+        task.wait(0.5) -- Odozva systému
     end
 end)`;
         }
@@ -452,24 +407,20 @@ end`;
             const countReq = store.count();
 
             countReq.onsuccess = () => {
-                if (countReq.result === 0) {
-                    // GroomaAI (1)
-                    store.add({ id: 500, category: 'grooma', title: 'GroomaAI - Universal Neural Intelligence', code: getGroomaLua() });
-                    // Wanderers (4)
-                    for(let i=0; i<4; i++) store.add({ id: 200+i, category: 'wanderer', title: `GAMEPLA Wanderer #${i+1}`, code: getBaseLua('wanderer', fullAnimSets[i%3], 200+i) });
-                    // Killers (20)
-                    for(let i=20; i<110; i++) store.add({ id: i, category: 'killer', title: `Shadow Stalker #${i+1}`, code: getBaseLua('killer', fullAnimSets[i%3], i) });
-                    // Zombies (90)
-                    for(let i=20; i<110; i++) store.add({ id: i, category: 'zombie', title: `Infected AI #${i-19}`, code: getBaseLua('zombie', fullAnimSets[0], i) });
-                    // Static (6)
-                    for(let i=110; i<116; i++) store.add({ id: i, category: 'static', title: `Static Entity #${i-109}`, code: getBaseLua('static', fullAnimSets[0], i) });
-                    // Dancer
-                    store.add({ id: 117, category: 'dancer', title: `Premier Dancer NPC`, code: getBaseLua('dancer', fullAnimSets[1], 117) });
-                    
-                    tx.oncomplete = () => renderScripts();
-                } else {
-                    renderScripts();
+                // Clear old DB if it had limits to refresh content
+                if (countReq.result > 0) {
+                    store.clear();
                 }
+                
+                // Populate with new Unbound versions
+                store.add({ id: 500, category: 'grooma', title: 'GroomaAI - Neural Unbound', code: getGroomaLua() });
+                for(let i=0; i<4; i++) store.add({ id: 200+i, category: 'wanderer', title: `GAMEPLA Wanderer #${i+1}`, code: getBaseLua('wanderer', fullAnimSets[i%3], 200+i) });
+                for(let i=0; i<20; i++) store.add({ id: i, category: 'killer', title: `Shadow Stalker #${i+1}`, code: getBaseLua('killer', fullAnimSets[i%3], i) });
+                for(let i=20; i<110; i++) store.add({ id: i, category: 'zombie', title: `Infected AI #${i-19}`, code: getBaseLua('zombie', fullAnimSets[0], i) });
+                for(let i=110; i<116; i++) store.add({ id: i, category: 'static', title: `Static Entity #${i-109}`, code: getBaseLua('static', fullAnimSets[0], i) });
+                store.add({ id: 117, category: 'dancer', title: `Premier Dancer NPC`, code: getBaseLua('dancer', fullAnimSets[1], 117) });
+                
+                tx.oncomplete = () => renderScripts();
             };
         }
 
@@ -520,7 +471,7 @@ end`;
                             <div class="mt-8 flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-widest">
                                 <div class="flex gap-4">
                                     <div class="flex items-center gap-2"><div class="w-1.5 h-1.5 rounded-full bg-sky-500"></div> Animator</div>
-                                    <div class="flex items-center gap-2"><div class="w-1.5 h-1.5 rounded-full bg-amber-500"></div> 2Y-Dev</div>
+                                    <div class="flex items-center gap-2"><div class="w-1.5 h-1.5 rounded-full bg-amber-500"></div> No-Limits</div>
                                 </div>
                                 <div class="italic">GAMEPLA Studios ©</div>
                             </div>
